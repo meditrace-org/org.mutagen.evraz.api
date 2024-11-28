@@ -1,3 +1,4 @@
+import asyncio
 import json
 from threading import Thread
 import logging
@@ -7,10 +8,11 @@ import requests
 
 
 class Notifier:
-    def __init__(self, webhook_url, mq_host, review_results_queue):
+    def __init__(self, webhook_url, mq_host, review_results_queue, mongo_client):
         self._webhook_url = webhook_url
         self._mq_host = mq_host
         self._review_results_queue = review_results_queue
+        self._mongo_client = mongo_client
 
     @property
     def webhook_url(self):
@@ -23,13 +25,12 @@ class Notifier:
     @property
     def review_results_queue(self):
         return self._review_results_queue
+    
+    @property
+    def mongo_client(self):
+        return self._mongo_client
 
-    def send_webhook_notification(self, request_id, file_url):
-        """Отправить уведомление через webhook, содержащий ID запроса и URL файла."""
-        data = {
-            "request_id": request_id,
-            "file_url": file_url
-        }
+    def send_webhook_notification(self, data):
         try:
             response = requests.post(self.webhook_url, json=data)
             response.raise_for_status()
@@ -37,23 +38,27 @@ class Notifier:
         except requests.RequestException as e:
             logging.error(f"Failed to send webhook. Error: {e}")
 
-    def store_result_in_db(self, request_id, file_url):
-        """Сохранить результат в базе данных."""
-        # TODO
-        logging.info(f"Storing result in DB: request_id={request_id}, file_url={file_url}")
+
+    def store_result_in_db(self, request_id, data):
+        asyncio.run(
+            self.mongo_client.insert_or_update(request_id=request_id, data=data)
+        )
+        logging.info(f"Storing result in DB: data={data}")
+
 
     def callback(self, ch, method, properties, body):
         """Функция обратного вызова для обработки сообщений из очереди."""
         try:
             message = json.loads(body)
-            request_id = message.get('request_id')
-            file_url = message.get('file_url')
+            request_id = message.get("request_id")
+            data = {
+                "request_id": request_id,
+                "status": message.get("status"),
+                "report_file_url": message.get("report_file_url")
+            }
 
-            if request_id and file_url:
-                self.store_result_in_db(request_id, file_url)
-                self.send_webhook_notification(request_id, file_url)
-            else:
-                logging.warning("Invalid message received: missing request_id or file_url")
+            self.store_result_in_db(request_id, data)
+            self.send_webhook_notification(data)
 
             ch.basic_ack(delivery_tag=method.delivery_tag)
         except json.JSONDecodeError:
