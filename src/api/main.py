@@ -66,7 +66,8 @@ if __name__ == "__main__":
         mq_port=app_config.rabbitmq.mq_port,
         mq_username=app_config.rabbitmq.mq_username,
         mq_password=app_config.rabbitmq.mq_password,
-        timeout=app_config.rabbitmq.mq_timeout
+        timeout=app_config.rabbitmq.mq_timeout,
+        prefetch_count=app_config.rabbitmq.prefetch_count
     )
     mq_client.connect()
     import uvicorn

@@ -13,7 +13,7 @@ class RabbitMQClient:
     def __init__(self, webhook_url: str, mongo_client: MongoDBClient,
                  review_results_queue: str, uploaded_to_review_queue: str,
                  mq_host: str, mq_port: int, mq_username: str, mq_password: str,
-                 timeout: TimeoutType = None):
+                 prefetch_count: int, timeout: TimeoutType = None):
         self._webhook_url = webhook_url
         self._mongo_client = mongo_client
         self._review_results_queue = review_results_queue
@@ -22,6 +22,7 @@ class RabbitMQClient:
         self._mq_port = mq_port
         self._mq_username = mq_username
         self._mq_password = mq_password
+        self._prefetch_count = prefetch_count
         self.timeout = timeout
         self.channel = None
 
@@ -46,6 +47,7 @@ class RabbitMQClient:
         )
         async with connection:
             self.channel = await connection.channel()
+            await self.channel.set_qos(prefetch_count=self._prefetch_count)
             queue = await self.channel.declare_queue(name=self.review_results_queue)
             await queue.consume(self._on_message, no_ack=False)
             await asyncio.Future()

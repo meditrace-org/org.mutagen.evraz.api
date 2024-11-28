@@ -1,6 +1,7 @@
 import logging
 import os
-from pydantic import BaseModel, BaseSettings, PositiveInt
+from pydantic import BaseModel, PositiveInt
+from pydantic_settings import BaseSettings
 
 
 def configure_logging():
@@ -15,6 +16,7 @@ class RabbitMQConfig(BaseModel):
     mq_username: str = os.getenv("MQ_USERNAME")
     mq_password: str = os.getenv("MQ_PASSWORD")
     mq_timeout: PositiveInt = int(os.getenv("MQ_TIMEOUT"))
+    prefetch_count: int = int(os.getenv("MQ_PREFETCH_COUNT"))
 
 
 class MongoDBConfig(BaseModel):
