@@ -48,9 +48,25 @@ class RabbitMQClient:
         async with connection:
             self.channel = await connection.channel()
             await self.channel.set_qos(prefetch_count=self._prefetch_count)
-            queue = await self.channel.declare_queue(name=self.review_results_queue)
+            queue = await self.channel.declare_queue(
+                name=self.review_results_queue,
+                durable=False,
+                auto_delete=False,
+                arguments={
+                    'x-message-ttl': 3600000
+                }
+            )
             await queue.consume(self._on_message, no_ack=False)
             await asyncio.Future()
+
+
+    async def close(self) -> None:
+        if self.channel and not self.channel.is_closed:
+            try:
+                await self.channel.close()
+                logging.info("RabbitMQ connection closed successfully.")
+            except Exception as e:
+                logging.error(f"Error closing RabbitMQ connection: {e}")
 
 
     async def publish(self, data: dict) -> None:

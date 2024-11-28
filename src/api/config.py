@@ -29,7 +29,7 @@ class MongoDBConfig(BaseModel):
 
     @property
     def uri(self) -> str:
-        return f"mongodb://{self._username}:{self._password}@{self._host}:{self._port}/{self.database}"
+        return f"mongodb://{self._username}:{self._password}@{self._host}:{self._port}/{self.database}?authSource=admin"
 
 
 class CommonConfig(BaseModel):
