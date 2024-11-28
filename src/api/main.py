@@ -32,7 +32,8 @@ db_client = init_db_client()
 
 
 class FileUploadRequest(BaseModel):
-    file_url: str
+    target_file_url: str
+    instructions_file_url: Optional[str] = Field(default=None)
     last_modified_dttm: Optional[str] = Field(default=None)
 
 
@@ -40,12 +41,13 @@ class FileUploadRequest(BaseModel):
 async def handle_upload_file(request: FileUploadRequest):
     request_id = str(uuid4())
     data = {
-        "file_url": request.file_url,
+        "target_file_url": request.file_url,
+        "instructions_file_url": request.instructions_file_url,
         "last_modified_dttm": request.last_modified_dttm,
         "status": STATUS_RECEIVED
     }
-    # TODO: отправить в очередь
     await db_client.insert_or_update(request_id=request_id, data=data)
+    # TODO: отправить в очередь
     return {"request_id": request_id}, 202
 
 
