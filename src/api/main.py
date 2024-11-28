@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from uuid import uuid4
 from typing import Optional
+from datetime import datetime
 from notifier import Notifier
 from config import app_config
 from mongodb_client import MongoDBClient
@@ -40,10 +41,15 @@ class FileUploadRequest(BaseModel):
 @app.post("/upload")
 async def handle_upload_file(request: FileUploadRequest):
     request_id = str(uuid4())
+    last_modified_unix = (
+        int(datetime.fromisoformat(request.last_modified_dttm.rstrip('Z')).timestamp())
+        if request.last_modified_dttm else None
+    )
     data = {
-        "target_file_url": request.file_url,
+        "request_id": request_id,
+        "target_file_url": request.target_file_url,
         "instructions_file_url": request.instructions_file_url,
-        "last_modified_dttm": request.last_modified_dttm,
+        "last_modified_dttm": last_modified_unix,
         "status": STATUS_RECEIVED
     }
     await db_client.insert_or_update(request_id=request_id, data=data)
@@ -53,7 +59,14 @@ async def handle_upload_file(request: FileUploadRequest):
 
 @app.get("/status/{request_id}")
 async def get_status(request_id: str):
-    return db_client.get_by_request_id(request_id=request_id)
+    result = await db_client.get_by_request_id(request_id=request_id)
+    response = {
+        "request_id": result["request_id"],
+        "status": result["status"],
+    }
+    if "report_file_url" in result:
+        response["report_file_url"] = result["report_file_url"]
+    return response
 
 
 if __name__ == "__main__":
