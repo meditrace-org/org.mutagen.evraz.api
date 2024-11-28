@@ -34,7 +34,7 @@ class MongoDBConfig(BaseModel):
 
 class CommonConfig(BaseModel):
     webhook_url: str = os.getenv("REVIEW_RESULTS_WEBHOOK_URL")
-    review_results_coll_name = os.getenv("REVIEW_RESULTS_COLLECTION_NAME")
+    review_results_coll_name: str = os.getenv("REVIEW_RESULTS_COLLECTION_NAME")
 
 
 class AppConfig(BaseSettings):

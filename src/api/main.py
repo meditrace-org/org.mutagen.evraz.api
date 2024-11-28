@@ -12,9 +12,20 @@ db_client = None
 
 
 class FileUploadRequest(BaseModel):
-    target_file_url: str
-    instructions_file_url: Optional[str] = Field(default=None)
-    last_modified_dttm: Optional[str] = Field(default=None)
+    target_file_url: str = Field(
+        description="Ссылка на архив проекта",
+        examples = ["http://mutagen.org/files/projects/project.zip"]
+    )
+    instructions_file_url: Optional[str] = Field(
+        default=None,
+        description="Ссылка на файл с инструкциями к проекту",
+        examples=["http://mutagen.org/files/projects/instructions.zip"]
+    )
+    last_modified_dttm: Optional[str] = Field(
+        default=None,
+        description="Время последнего изменения в формате ISO.",
+        examples=["2024-10-10T12:30:00+03:00"]
+    )
 
 
 def convert_to_unix_timestamp(iso_date_str: Optional[str]) -> Optional[int]:
@@ -23,7 +34,24 @@ def convert_to_unix_timestamp(iso_date_str: Optional[str]) -> Optional[int]:
     return None
 
 
-@app.post("/upload")
+@app.post(
+    "/upload",
+    summary="Загрузка файлов проекта для его дальнейшего ревью"
+)
+class FileUploadResponse(BaseModel):
+    request_id: str = Field(description="Уникальный идентификатор запроса")
+
+class StatusResponse(BaseModel):
+    request_id: str = Field(description="Уникальный идентификатор запроса")
+    status: str = Field(description="Статус запроса")
+    report_file_url: Optional[str] = Field(description="Ссылка на файл с отчётом", default=None)
+
+@app.post(
+    "/upload",
+    summary="Загрузка файлов проекта для его дальнейшего ревью",
+    response_model=FileUploadResponse,
+    status_code=202
+)
 async def handle_upload_file(request: FileUploadRequest):
     request_id = str(uuid4())
     last_modified_unix = convert_to_unix_timestamp(request.last_modified_dttm)
@@ -36,10 +64,15 @@ async def handle_upload_file(request: FileUploadRequest):
     }
     await db_client.insert_or_update(request_id=request_id, data=data)
     await mq_client.publish(data=data)
-    return {"request_id": request_id}, 202
+    return FileUploadResponse(request_id=request_id), 202
 
 
-@app.get("/status/{request_id}")
+@app.get(
+    "/status/{request_id}",
+    summary="Проверка статуса запроса",
+    response_model=StatusResponse,
+    status_code=200
+)
 async def get_status(request_id: str):
     result = await db_client.get_by_request_id(request_id=request_id)
     response = {
@@ -47,13 +80,13 @@ async def get_status(request_id: str):
         "status": result.get("status"),
         "report_file_url": result.get("report_file_url")
     }
-    return response
+    return StatusResponse(**response)
 
 
 if __name__ == "__main__":
     db_client = MongoDBClient(
         database_uri=app_config.mongodb.uri,
-        database_name=app_config.mongodb.database_name,
+        database_name=app_config.mongodb.database,
         collection_name=app_config.common.review_results_coll_name,
         records_ttl=app_config.mongodb.records_ttl
     )
@@ -73,3 +106,4 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
