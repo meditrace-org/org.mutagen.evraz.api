@@ -1,1 +1,6 @@
-TODO
+fastapi~=0.115.5
+pydantic~=2.9.2
+pydantic-settings~=2.6.1
+motor~=3.6.0
+aio-pika~=9.5.1
+aiogram~=3.15.0
