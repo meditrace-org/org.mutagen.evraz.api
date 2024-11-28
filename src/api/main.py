@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from uuid import uuid4
 from typing import Optional
 from datetime import datetime
-from notifier import Notifier
+from rabbitmq_client import RabbitMQClient
 from config import app_config
 from mongodb_client import MongoDBClient
 from pydantic import BaseModel, Field
@@ -35,7 +35,7 @@ async def handle_upload_file(request: FileUploadRequest):
         "status": "received"
     }
     await db_client.insert_or_update(request_id=request_id, data=data)
-    # TODO: отправить в очередь
+    await mq_client.publish(data=data)
     return {"request_id": request_id}, 202
 
 
@@ -57,13 +57,18 @@ if __name__ == "__main__":
         collection_name=app_config.common.review_results_coll_name,
         records_ttl=app_config.mongodb.records_ttl
     )
-    notifier = Notifier(
+    mq_client = RabbitMQClient(
         webhook_url=app_config.common.webhook_url,
-        mq_host=app_config.rabbitmq.mq_host,
+        mongo_client=db_client,
         review_results_queue=app_config.rabbitmq.review_results_queue,
-        mongo_client=db_client
+        uploaded_to_review_queue=app_config.rabbitmq.uploaded_to_review_queue,
+        mq_host=app_config.rabbitmq.mq_host,
+        mq_port=app_config.rabbitmq.mq_port,
+        mq_username=app_config.rabbitmq.mq_username,
+        mq_password=app_config.rabbitmq.mq_password,
+        timeout=app_config.rabbitmq.mq_timeout
     )
-    notifier.run()
+    mq_client.connect()
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -9,8 +9,12 @@ def configure_logging():
 
 class RabbitMQConfig(BaseModel):
     review_results_queue: str = os.getenv("REVIEW_RESULTS_QUEUE")
+    uploaded_to_review_queue: str = os.getenv("UPLOADED_TO_REVIEW_QUEUE")
     mq_host: str = os.getenv("MQ_HOST")
     mq_port: PositiveInt = int(os.getenv("MQ_PORT"))
+    mq_username: str = os.getenv("MQ_USERNAME")
+    mq_password: str = os.getenv("MQ_PASSWORD")
+    mq_timeout: PositiveInt = int(os.getenv("MQ_TIMEOUT"))
 
 
 class MongoDBConfig(BaseModel):
