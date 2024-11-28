@@ -5,7 +5,7 @@ import logging
 import aio_pika
 from aio_pika import connect
 from aio_pika.abc import AbstractIncomingMessage, TimeoutType
-from aiogram.client.session import aiohttp
+import aiohttp
 
 from mongodb_client import MongoDBClient
 
