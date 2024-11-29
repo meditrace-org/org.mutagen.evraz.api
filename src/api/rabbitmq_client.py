@@ -14,6 +14,7 @@ class RabbitMQClient:
                  review_results_queue: str, uploaded_to_review_queue: str,
                  mq_host: str, mq_port: int, mq_username: str, mq_password: str,
                  prefetch_count: int, timeout: TimeoutType = None, reconnect_interval: int = 5):
+        self._should_reconnect = True
         self._consume_task = None
         self.connection = None
         self.reconnect_interval = reconnect_interval
@@ -54,6 +55,8 @@ class RabbitMQClient:
                 break
             except Exception as e:
                 logging.error(f"Error connecting to RabbitMQ: {e}")
+                if not self._should_reconnect:
+                    break
                 logging.info(f"Retrying in {self.reconnect_interval} seconds...")
                 await asyncio.sleep(self.reconnect_interval)
 
@@ -77,13 +80,16 @@ class RabbitMQClient:
             except asyncio.CancelledError:
                 logging.info("Consume task was cancelled due to connection closure.")
 
+
     async def _on_close_channel(self, *args):
         if not self._consume_task.done():
             self._consume_task.cancel()
-        logging.info(f"Channel closed, reconnecting in {self.reconnect_interval} seconds...")
-        await self.connect()
+        if self._should_reconnect:
+            logging.info(f"Channel closed, reconnecting in {self.reconnect_interval} seconds...")
+            await self.connect()
 
-    async def close(self) -> None:
+    async def close(self, should_reconnect: bool = False) -> None:
+        self._should_reconnect = should_reconnect
         if self.channel and not self.channel.is_closed:
             try:
                 await self.channel.close()
