@@ -30,7 +30,7 @@ class CoroutineFormatter(logging.Formatter):
 def configure_logging():
     start_time = datetime.now().strftime("%d_%m_%Y__%H_%M_%S")
     handler = RotatingFileHandler(
-        f'../../data/log_{start_time}.txt',
+        f'data/log_{start_time}.txt',
         maxBytes=5 * 1024 * 1024,
         backupCount=10
     )
