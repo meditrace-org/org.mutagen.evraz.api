@@ -13,7 +13,10 @@ class RabbitMQClient:
     def __init__(self, webhook_url: str, mongo_client: MongoDBClient,
                  review_results_queue: str, uploaded_to_review_queue: str,
                  mq_host: str, mq_port: int, mq_username: str, mq_password: str,
-                 prefetch_count: int, timeout: TimeoutType = None):
+                 prefetch_count: int, timeout: TimeoutType = None, reconnect_interval: int = 5):
+        self._consume_task = None
+        self.connection = None
+        self.reconnect_interval = reconnect_interval
         self._webhook_url = webhook_url
         self._mongo_client = mongo_client
         self._review_results_queue = review_results_queue
@@ -38,16 +41,27 @@ class RabbitMQClient:
 
 
     async def connect(self) -> None:
-        connection = await connect(
-            host=self._mq_host,
-            port=self._mq_port,
-            login=self._mq_username,
-            password=self._mq_password,
-            timeout=self.timeout
-        )
-        async with connection:
-            self.channel = await connection.channel()
+        while True:
+            try:
+                self.connection = await connect(
+                    host=self._mq_host,
+                    port=self._mq_port,
+                    login=self._mq_username,
+                    password=self._mq_password,
+                    timeout=self.timeout
+                )
+                logging.info("Connected to RabbitMQ.")
+                break
+            except Exception as e:
+                logging.error(f"Error connecting to RabbitMQ: {e}")
+                logging.info("Retrying in 5 seconds...")
+                await asyncio.sleep(5)
+
+        async with self.connection:
+            self.channel = await self.connection.channel()
+            self.channel.close_callbacks.add(self._on_close_channel)
             await self.channel.set_qos(prefetch_count=self._prefetch_count)
+
             queue = await self.channel.declare_queue(
                 name=self.review_results_queue,
                 durable=False,
@@ -57,8 +71,17 @@ class RabbitMQClient:
                 }
             )
             await queue.consume(self._on_message, no_ack=False)
-            await asyncio.Future()
+            self._consume_task = asyncio.Future()
+            try:
+                await self._consume_task
+            except asyncio.CancelledError:
+                logging.info("Consume task was cancelled due to connection closure.")
 
+    async def _on_close_channel(self, *args):
+        if not self._consume_task.done():
+            self._consume_task.cancel()
+        logging.info(f"Channel closed, reconnecting in {self.reconnect_interval} seconds...")
+        await self.connect()
 
     async def close(self) -> None:
         if self.channel and not self.channel.is_closed:

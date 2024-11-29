@@ -1,5 +1,7 @@
 import asyncio
+from datetime import datetime
 
+import httpx
 from fastapi import FastAPI
 from uuid import uuid4
 from typing import Optional
@@ -7,7 +9,7 @@ from contextlib import asynccontextmanager
 from rabbitmq_client import RabbitMQClient
 from config import app_config
 from mongodb_client import MongoDBClient
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, HttpUrl
 import logging
 
 db_client: MongoDBClient = None
@@ -15,20 +17,55 @@ mq_client: RabbitMQClient = None
 
 
 class FileUploadRequest(BaseModel):
-    target_file_url: str = Field(
-        description="Ссылка на архив проекта",
+    target_file_url: HttpUrl = Field(
+        description="Ссылка на файл или архив проекта",
         examples=["http://mutagen.org/files/projects/project.zip"]
     )
-    instructions_file_url: Optional[str] = Field(
+    instructions_file_url: Optional[HttpUrl] = Field(
         default=None,
-        description="Ссылка на файл с инструкциями к проекту",
-        examples=["http://mutagen.org/files/projects/instructions.zip"]
+        description="Ссылка на файл с инструкциями (PDF)",
+        examples=["http://mutagen.org/files/projects/instructions.pdf"]
     )
     last_modified_dttm: Optional[str] = Field(
         default=None,
         description="Время последнего изменения в формате ISO.",
         examples=["2024-10-10T12:30:00+03:00"]
     )
+
+    @field_validator("last_modified_dttm", mode="before")
+    def validate_last_modified_dttm(cls, value):
+        if value is None:
+            return value
+        try:
+            datetime.fromisoformat(value)
+        except ValueError:
+            raise ValueError("last_modified_dttm должен быть в формате ISO (пример 2024-10-10T12:30:00+03:00)")
+        return value
+
+    @field_validator("target_file_url", "instructions_file_url", mode="before")
+    def validate_url_content_type(cls, value, info):
+        if value is None:
+            return value
+
+        try:
+            with httpx.Client(timeout=5.0) as client:
+                response = client.head(value, follow_redirects=True)
+
+            if response.status_code != 200:
+                raise ValueError(f"{info.field_name} недоступен: статус {response.status_code}")
+
+            content_type = response.headers.get("Content-Type", "")
+            if info.field_name == "target_file_url":
+                if not any(ct in content_type for ct in ["application/zip", "application/x-rar-compressed", "application/x-tar"]):
+                    raise ValueError(f"URL {value} должен указывать на архив (Content-Type: {content_type})")
+            elif info.field_name == "instructions_file_url":
+                if "application/pdf" not in content_type:
+                    raise ValueError(f"URL {value} должен указывать на PDF файл (Content-Type: {content_type})")
+
+        except httpx.RequestError as e:
+            raise ValueError(f"URL {value} недоступен: {e}")
+
+        return value
 
 
 class FileUploadResponse(BaseModel):
@@ -63,12 +100,13 @@ async def lifespan(app: FastAPI):
         timeout=app_config.rabbitmq.mq_timeout,
         prefetch_count=app_config.rabbitmq.prefetch_count
     )
-    asyncio.create_task(mq_client.connect())
+    connect_task = asyncio.create_task(mq_client.connect())
 
     try:
         yield
     finally:
         if mq_client:
+            connect_task.cancel()
             await mq_client.close()
 
 
@@ -89,8 +127,8 @@ async def handle_upload_file(request: FileUploadRequest):
     request_id = str(uuid4())
     data = {
         "request_id": request_id,
-        "target_file_url": request.target_file_url,
-        "instructions_file_url": request.instructions_file_url,
+        "target_file_url": str(request.target_file_url),
+        "instructions_file_url": str(request.instructions_file_url) if request.instructions_file_url else None,
         "last_modified_dttm": request.last_modified_dttm,
         "status": "received"
     }
