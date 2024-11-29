@@ -27,10 +27,15 @@ class CoroutineFormatter(logging.Formatter):
             return f"{t}.{int(record.msecs):03d}"
 
 
+log_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'data')
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
+
+
 def configure_logging():
     start_time = datetime.now().strftime("%d_%m_%Y__%H_%M_%S")
     handler = RotatingFileHandler(
-        f'data/log_{start_time}.txt',
+        os.path.join(log_dir, f'log_{start_time}.txt'),
         maxBytes=5 * 1024 * 1024,
         backupCount=10
     )
