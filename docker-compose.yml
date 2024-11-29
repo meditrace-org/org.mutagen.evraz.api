@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  evraz-api:
+    hostname: evraz-api
+    container_name: evraz-api
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    ports:
+      - "${EVRAZ_API_PORT:-8000}:${EVRAZ_API_PORT:-8000}"
+    volumes:
+      - ./data:/app/data
+    networks:
+      - mutagen-evraz-backend
+
+networks:
+  mutagen-evraz-backend:
+    external: true
+    name: mutagen-evraz-backend
