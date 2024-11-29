@@ -55,11 +55,21 @@ class FileUploadRequest(BaseModel):
                 raise ValueError(f"URL {value} недоступен: статус {response.status_code}")
 
             content_type = response.headers.get("Content-Type", "")
+            target_file_content_types = [
+                "application/zip",
+                "application/x-rar-compressed",
+                "application/x-tar",
+                "application/octet-stream"
+            ]
+            instructions_file_content_types = [
+                "application/pdf",
+                "application/octet-stream"
+            ]
             if info.field_name == "target_file_url":
-                if not any(ct in content_type for ct in ["application/zip", "application/x-rar-compressed", "application/x-tar"]):
+                if not any(ct in content_type for ct in target_file_content_types):
                     raise ValueError(f"URL {value} должен указывать на архив (Content-Type: {content_type})")
             elif info.field_name == "instructions_file_url":
-                if "application/pdf" not in content_type:
+                if not any(ct in content_type for ct in instructions_file_content_types):
                     raise ValueError(f"URL {value} должен указывать на PDF файл (Content-Type: {content_type})")
 
         except httpx.RequestError as e:
