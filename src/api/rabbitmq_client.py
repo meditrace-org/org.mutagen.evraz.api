@@ -54,8 +54,8 @@ class RabbitMQClient:
                 break
             except Exception as e:
                 logging.error(f"Error connecting to RabbitMQ: {e}")
-                logging.info("Retrying in 5 seconds...")
-                await asyncio.sleep(5)
+                logging.info(f"Retrying in {self.reconnect_interval} seconds...")
+                await asyncio.sleep(self.reconnect_interval)
 
         async with self.connection:
             self.channel = await self.connection.channel()
