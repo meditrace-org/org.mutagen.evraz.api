@@ -1,11 +1,49 @@
+import asyncio
 import logging
 import os
+from datetime import datetime
+from logging.handlers import RotatingFileHandler
+
 from pydantic import BaseModel, PositiveInt
 from pydantic_settings import BaseSettings
 
 
+class CoroutineFormatter(logging.Formatter):
+    def format(self, record):
+        current_task = asyncio.current_task()
+        if current_task:
+            record.coroutine_name = current_task.get_name()
+        else:
+            record.coroutine_name = "MainThread"
+        return super().format(record)
+
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.fromtimestamp(record.created)
+        if datefmt:
+            s = dt.strftime(datefmt)
+            return s[:-3]
+        else:
+            t = dt.strftime('%Y-%m-%d %H:%M:%S')
+            return f"{t}.{int(record.msecs):03d}"
+
+
 def configure_logging():
-    logging.basicConfig(level=logging.INFO)
+    start_time = datetime.now().strftime("%d_%m_%Y__%H_%M_%S")
+    handler = RotatingFileHandler(
+        f'../../data/log_{start_time}.txt',
+        maxBytes=5 * 1024 * 1024,
+        backupCount=10
+    )
+
+    formatter = CoroutineFormatter(
+        '%(asctime)s [%(coroutine_name)s] %(levelname)s %(name)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S.%f'
+    )
+    handler.setFormatter(formatter)
+    logging.basicConfig(
+        level=logging.INFO,
+        handlers=[handler, logging.StreamHandler()]
+    )
 
 
 class RabbitMQConfig(BaseModel):
