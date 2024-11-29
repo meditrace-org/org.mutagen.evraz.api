@@ -52,7 +52,7 @@ class FileUploadRequest(BaseModel):
                 response = client.head(value, follow_redirects=True)
 
             if response.status_code != 200:
-                raise ValueError(f"{info.field_name} недоступен: статус {response.status_code}")
+                raise ValueError(f"URL {value} недоступен: статус {response.status_code}")
 
             content_type = response.headers.get("Content-Type", "")
             if info.field_name == "target_file_url":
