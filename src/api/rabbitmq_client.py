@@ -6,6 +6,7 @@ import aio_pika
 from aio_pika import connect
 from aio_pika.abc import AbstractIncomingMessage, TimeoutType
 import aiohttp
+import utils
 
 from mongodb_client import MongoDBClient
 
@@ -108,14 +109,8 @@ class RabbitMQClient:
     async def _on_message(self, message: AbstractIncomingMessage) -> None:
         async with message.process():
             body = message.body
-            message = json.loads(body)
-            request_id = message.get('request_id')
-            data = {
-                'request_id': request_id,
-                'status': message.get('status'),
-                'report_file_url': message.get('report_file_url')
-            }
-            await self._store_result_in_db(request_id, data)
+            data = utils.build_report_response(json.loads(body))
+            await self._store_result_in_db(data.get("request_id"), data)
             await self._send_webhook_notification(data)
 
 

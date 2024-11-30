@@ -1,6 +1,5 @@
 import asyncio
 from datetime import datetime
-
 import httpx
 from fastapi import FastAPI
 from uuid import uuid4
@@ -11,6 +10,7 @@ from config import app_config
 from mongodb_client import MongoDBClient
 from pydantic import BaseModel, Field, field_validator, HttpUrl
 import logging
+import utils
 
 db_client: MongoDBClient = None
 mq_client: RabbitMQClient = None
@@ -85,7 +85,7 @@ class FileUploadResponse(BaseModel):
 class StatusResponse(BaseModel):
     request_id: str = Field(description="Уникальный идентификатор запроса")
     status: str = Field(description="Статус запроса")
-    report_file_url: Optional[str] = Field(description="Ссылка на файл с отчётом", default=None)
+    report_content: Optional[str] = Field(description="Текст отчета в формате markdown", default=None)
 
 
 @asynccontextmanager
@@ -161,11 +161,7 @@ async def get_status(request_id: str):
         raise ValueError("db_client is not initialized")
 
     result = await db_client.get_by_request_id(request_id=request_id)
-    response = {
-        "request_id": result.get("request_id"),
-        "status": result.get("status"),
-        "report_file_url": result.get("report_file_url")
-    }
+    response = utils.build_report_response(result)
     return StatusResponse(**response)
 
 
