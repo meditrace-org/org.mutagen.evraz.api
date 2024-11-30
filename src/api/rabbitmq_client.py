@@ -4,23 +4,16 @@ import logging
 
 import aio_pika
 from aio_pika import connect
-from aio_pika.abc import AbstractIncomingMessage, TimeoutType
-import aiohttp
-import utils
-
-from mongodb_client import MongoDBClient
+from aio_pika.abc import TimeoutType
 
 class RabbitMQClient:
-    def __init__(self, webhook_url: str, mongo_client: MongoDBClient,
-                 review_results_queue: str, uploaded_to_review_queue: str,
+    def __init__(self, review_results_queue: str, uploaded_to_review_queue: str,
                  mq_host: str, mq_port: int, mq_username: str, mq_password: str,
                  prefetch_count: int, timeout: TimeoutType = None, reconnect_interval: int = 5):
         self._should_reconnect = True
         self._consume_task = None
         self.connection = None
         self.reconnect_interval = reconnect_interval
-        self._webhook_url = webhook_url
-        self._mongo_client = mongo_client
         self._review_results_queue = review_results_queue
         self._uploaded_to_review_queue = uploaded_to_review_queue
         self._mq_host = mq_host
@@ -30,6 +23,7 @@ class RabbitMQClient:
         self._prefetch_count = prefetch_count
         self.timeout = timeout
         self.channel = None
+        self._message_handler = None
 
 
     @property
@@ -40,6 +34,11 @@ class RabbitMQClient:
     @property
     def uploaded_to_review_queue(self):
         return self._uploaded_to_review_queue
+
+
+    def on_message(self, func):
+        self._message_handler = func
+        return func
 
 
     async def connect(self) -> None:
@@ -74,7 +73,8 @@ class RabbitMQClient:
                     'x-message-ttl': 3600000
                 }
             )
-            await queue.consume(self._on_message, no_ack=False)
+            if self._message_handler:
+                await queue.consume(self._message_handler, no_ack=False)
             self._consume_task = asyncio.Future()
             try:
                 await self._consume_task
@@ -88,6 +88,7 @@ class RabbitMQClient:
         if self._should_reconnect:
             logging.info(f"Channel closed, reconnecting in {self.reconnect_interval} seconds...")
             await self.connect()
+
 
     async def close(self, should_reconnect: bool = False) -> None:
         self._should_reconnect = should_reconnect
@@ -104,26 +105,3 @@ class RabbitMQClient:
             aio_pika.Message(body=json.dumps(data).encode()),
             routing_key=self.uploaded_to_review_queue
         )
-
-
-    async def _on_message(self, message: AbstractIncomingMessage) -> None:
-        async with message.process():
-            body = message.body
-            data = utils.build_report_response(json.loads(body))
-            await self._store_result_in_db(data.get("request_id"), data)
-            await self._send_webhook_notification(data)
-
-
-    async def _send_webhook_notification(self, data: dict) -> None:
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(self._webhook_url, json=data) as response:
-                    response.raise_for_status()
-                    logging.info(f'Webhook sent successfully: {data}')
-        except aiohttp.ClientError as e:
-            logging.error(f'Failed to send webhook. Error: {e}')
-
-
-    async def _store_result_in_db(self, request_id: str, data: dict) -> None:
-        await self._mongo_client.insert_or_update(request_id=request_id, data=data)
-        logging.info(f'Storing result in DB: data={data}')

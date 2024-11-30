@@ -1,3 +1,5 @@
+import logging
+
 from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi import HTTPException
 from datetime import datetime, timedelta, timezone
@@ -6,11 +8,21 @@ from datetime import datetime, timedelta, timezone
 class MongoDBClient:
     def __init__(self, database_uri: str, database_name: str, collection_name: str, records_ttl: int):
         self._records_ttl = records_ttl
-        self.client = AsyncIOMotorClient(database_uri)
+        self._database_uri = database_uri
+        self._database_name = database_name
+        self._collection_name = collection_name
+        self.client, self.database, self.collection = None, None, None
 
-        self.database = self.client[database_name]
-        self.collection = self.database[collection_name]
+
+    def connect(self):
+        self.client = AsyncIOMotorClient(self._database_uri)
+
+        logging.info('Connected to MongoDB.')
+
+        self.database = self.client[self._database_name]
+        self.collection = self.database[self._collection_name]
         self._create_ttl_index()
+
 
     def _create_ttl_index(self):
         # Создание TTL индекса на поле `expiration_dttm`

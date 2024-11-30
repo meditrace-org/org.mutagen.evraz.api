@@ -1,6 +1,8 @@
 import asyncio
+import json
 from datetime import datetime
 import httpx
+from aiogram.client.session import aiohttp
 from fastapi import FastAPI
 from uuid import uuid4
 from typing import Optional
@@ -11,9 +13,24 @@ from mongodb_client import MongoDBClient
 from pydantic import BaseModel, Field, field_validator, HttpUrl
 import logging
 import utils
+from aio_pika.abc import AbstractIncomingMessage
 
-db_client: MongoDBClient = None
-mq_client: RabbitMQClient = None
+db_client = MongoDBClient(
+    database_uri=app_config.mongodb.uri,
+    database_name=app_config.mongodb.database,
+    collection_name=app_config.common.review_results_coll_name,
+    records_ttl=app_config.mongodb.records_ttl
+)
+mq_client = RabbitMQClient(
+    review_results_queue=app_config.rabbitmq.review_results_queue,
+    uploaded_to_review_queue=app_config.rabbitmq.uploaded_to_review_queue,
+    mq_host=app_config.rabbitmq.mq_host,
+    mq_port=app_config.rabbitmq.mq_port,
+    mq_username=app_config.rabbitmq.mq_username,
+    mq_password=app_config.rabbitmq.mq_password,
+    timeout=app_config.rabbitmq.mq_timeout,
+    prefetch_count=app_config.rabbitmq.prefetch_count
+)
 
 
 class FileUploadRequest(BaseModel):
@@ -91,25 +108,7 @@ class StatusResponse(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global db_client, mq_client
-
-    db_client = MongoDBClient(
-        database_uri=app_config.mongodb.uri,
-        database_name=app_config.mongodb.database,
-        collection_name=app_config.common.review_results_coll_name,
-        records_ttl=app_config.mongodb.records_ttl
-    )
-    mq_client = RabbitMQClient(
-        webhook_url=app_config.common.webhook_url,
-        mongo_client=db_client,
-        review_results_queue=app_config.rabbitmq.review_results_queue,
-        uploaded_to_review_queue=app_config.rabbitmq.uploaded_to_review_queue,
-        mq_host=app_config.rabbitmq.mq_host,
-        mq_port=app_config.rabbitmq.mq_port,
-        mq_username=app_config.rabbitmq.mq_username,
-        mq_password=app_config.rabbitmq.mq_password,
-        timeout=app_config.rabbitmq.mq_timeout,
-        prefetch_count=app_config.rabbitmq.prefetch_count
-    )
+    db_client.connect()
     connect_task = asyncio.create_task(mq_client.connect())
 
     try:
@@ -163,6 +162,25 @@ async def get_status(request_id: str):
     result = await db_client.get_by_request_id(request_id=request_id)
     response = utils.build_report_response(result)
     return StatusResponse(**response)
+
+
+@mq_client.on_message
+async def on_message(message: AbstractIncomingMessage):
+    async with message.process():
+        body = message.body
+        data = utils.build_report_response(json.loads(body))
+
+        # save result in mongo
+        await db_client.insert_or_update(request_id=data.get("request_id"), data=data)
+
+        # send to rabbitmq
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(app_config.common.webhook_url, json=data) as response:
+                    response.raise_for_status()
+                    logging.info(f'Webhook sent successfully: {data}')
+        except aiohttp.ClientError as e:
+            logging.error(f'Failed to send webhook. Error: {e}')
 
 
 if __name__ == "__main__":
