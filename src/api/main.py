@@ -1,9 +1,10 @@
 import asyncio
 import json
 from datetime import datetime
+
+import aiohttp
 import httpx
 import markdown2
-from aiogram.client.session import aiohttp
 from fastapi import FastAPI, Request
 from uuid import uuid4
 from typing import Optional
