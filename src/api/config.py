@@ -79,6 +79,7 @@ class CommonConfig(BaseModel):
     webhook_url: str = os.getenv("REVIEW_RESULTS_WEBHOOK_URL")
     review_results_coll_name: str = os.getenv("REVIEW_RESULTS_COLLECTION_NAME")
     port: int = int(os.getenv("EVRAZ_API_PORT"))
+    proj_dir: str = os.path.join(os.path.dirname(__file__), '..', '..')
 
 
 class AppConfig(BaseSettings):

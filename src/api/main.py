@@ -2,11 +2,17 @@ import asyncio
 import json
 from datetime import datetime
 import httpx
+import markdown2
 from aiogram.client.session import aiohttp
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from uuid import uuid4
 from typing import Optional
 from contextlib import asynccontextmanager
+
+from starlette.responses import HTMLResponse
+from starlette.staticfiles import StaticFiles
+from starlette.templating import Jinja2Templates
+
 from rabbitmq_client import RabbitMQClient
 from config import app_config
 from mongodb_client import MongoDBClient
@@ -31,6 +37,7 @@ mq_client = RabbitMQClient(
     timeout=app_config.rabbitmq.mq_timeout,
     prefetch_count=app_config.rabbitmq.prefetch_count
 )
+templates = Jinja2Templates(directory=f'{app_config.common.proj_dir}/templates')
 
 
 class FileUploadRequest(BaseModel):
@@ -183,7 +190,40 @@ async def on_message(message: AbstractIncomingMessage):
             logging.error(f'Failed to send webhook. Error: {e}')
 
 
+@app.get(
+    "/reports/{request_id}",
+    summary="Просмотреть отчет",
+    response_class=HTMLResponse,
+    status_code=200,
+    responses={
+        404: {"description": "Отчет не найден"},
+        425: {"description": "Отчет не готов"}
+    }
+)
+async def get_report(request: Request, request_id: str):
+    data = await db_client.get_by_request_id(request_id=request_id)
+    if data is None:
+        return HTMLResponse(status_code=404)
+    md_content = data.get("report_content")
+    if md_content is None:
+        return HTMLResponse(status_code=425)
+    html_content = markdown2.markdown(md_content, extras=[
+        "fenced-code-blocks", "tables", "header-ids", "github",
+        "syntax-highlighting", "autolinks", "footnotes"
+    ])
+    return templates.TemplateResponse(
+        request=request,
+        name="report_template.html",
+        context={"html_content": html_content}
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
 
+    app.mount(
+        '/static',
+        StaticFiles(directory=f'{app_config.common.proj_dir}/static'),
+        name='static'
+    )
     uvicorn.run(app, host="0.0.0.0", port=app_config.common.port, log_config=None)
